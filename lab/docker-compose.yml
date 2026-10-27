@@ -1,0 +1,42 @@
+# Lab isolado para estudar o backdoor "fake plugin + include".
+#
+# SEGURANÇA — leia o README.md antes de subir:
+#   - a rede 'labnet' é `internal: true` => os containers NÃO alcançam a internet
+#     (nem o malware consegue "ligar pra casa"). Puxe as imagens ANTES (docker compose pull).
+#   - as portas são publicadas só em 127.0.0.1 => nada exposto na LAN.
+#   - sem volumes nomeados persistentes: `docker compose down -v` apaga tudo.
+#   - o que roda aqui por padrão é um DEMONSTRADOR BENIGNO (./demo-plugin), não
+#     o malware real. Para analisar o artefato real, faça ESTÁTICO (ver README).
+
+services:
+  db:
+    image: mariadb:11
+    networks: [labnet]
+    environment:
+      MARIADB_ROOT_PASSWORD: labroot
+      MARIADB_DATABASE: wp
+      MARIADB_USER: wp
+      MARIADB_PASSWORD: wp
+    # sem ports: o banco não precisa ser acessível de fora do lab.
+
+  wordpress:
+    image: wordpress:6.8-php8.3-apache
+    depends_on: [db]
+    networks: [labnet]
+    ports:
+      - "127.0.0.1:8080:80"   # só localhost
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wp
+      WORDPRESS_DB_PASSWORD: wp
+      WORDPRESS_DB_NAME: wp
+      WORDPRESS_DEBUG: "1"
+    volumes:
+      # demonstrador benigno montado como plugin (somente leitura).
+      - ./demo-plugin:/var/www/html/wp-content/plugins/zz-demo-shell:ro
+      # scripts de observação.
+      - ./observe:/observe:ro
+
+networks:
+  labnet:
+    internal: true   # <<< sem rota para a internet
